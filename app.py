@@ -937,6 +937,54 @@ def moderate_content(content):
     
     return moderated_content, score
 
+# ===== Exercise 4.4: Reputation + Leaderboard Feature =====
+
+def calculate_user_reputation(user_id):
+    """
+    Calculates reputation from reactions that other users left on this user's posts.
+    """
+    db = get_db()
+    # Join posts (authored by user) with reactions table
+    rows = db.execute("""
+        SELECT reaction_type, COUNT(*) as c
+        FROM reactions r
+        JOIN posts p ON p.id = r.post_id
+        WHERE p.user_id = ?
+        GROUP BY reaction_type
+    """, (user_id,)).fetchall()
+    weights = {'like': 1, 'love': 2, 'laugh': 1, 'wow': 1, 'sad': 0, 'angry': -1}
+    score = 0
+    for r in rows:
+        score += weights.get(r['reaction_type'], 0) * r['c']
+    return max(score, 0)
+
+
+@app.route('/leaderboard')
+def leaderboard():
+    """Displays top users ranked by reputation score."""
+    db = get_db()
+    users = db.execute("SELECT id, username FROM users").fetchall()
+    leaderboard_data = []
+    for user in users:
+        rep = calculate_user_reputation(user['id'])
+        leaderboard_data.append({'username': user['username'], 'score': rep})
+    leaderboard_data.sort(key=lambda x: x['score'], reverse=True)
+    return render_template('leaderboard.html.j2', leaderboard_data=leaderboard_data)
+
+
+
+@app.context_processor
+def inject_reputation():
+    """
+    Makes a small helper available to templates: {{ reputation(user_id) }}
+    """
+    def reputation(user_id):
+        try:
+            return calculate_user_reputation(user_id)
+        except Exception:
+            return 0
+    return dict(reputation=reputation)
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
